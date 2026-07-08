@@ -1092,14 +1092,14 @@ impl Interpreter {
 
             // Field access: struct field access, or enum variant like `Color.red`
             Expr::FieldAccess(obj, field, _) => {
-                if let Some(owner_name) = Self::dotted_expr_name(obj) {
-                    if let Some(enum_name) = self.registry_name(&self.enums, &owner_name) {
-                        return Ok(ExprFlow::Value(Value::Enum {
-                            type_name: enum_name,
-                            variant: field.name.clone(),
-                            fields: vec![],
-                        }));
-                    }
+                if let Some(owner_name) = Self::dotted_expr_name(obj)
+                    && let Some(enum_name) = self.registry_name(&self.enums, &owner_name)
+                {
+                    return Ok(ExprFlow::Value(Value::Enum {
+                        type_name: enum_name,
+                        variant: field.name.clone(),
+                        fields: vec![],
+                    }));
                 }
                 match obj.as_ref() {
                     Expr::Ident(ident) => {
@@ -1141,7 +1141,7 @@ impl Interpreter {
             Expr::Pipeline(initial, steps, _) => {
                 let mut value = value_or_signal!(self, initial);
                 for step in steps {
-                    value = match self.eval_pipeline_step(&step, value)? {
+                    value = match self.eval_pipeline_step(step, value)? {
                         ExprFlow::Value(next) => next,
                         ExprFlow::Signal(signal) => return Ok(ExprFlow::Signal(signal)),
                     };
@@ -1350,22 +1350,20 @@ impl Interpreter {
                 }
             }
             Expr::FieldAccess(obj, field, _) => {
-                if let Some(name) = Self::extract_dotted_name(obj, &field.name) {
-                    if let Some(machine_name) = self.registry_name(&self.machines, &name) {
-                        return Ok(ExprFlow::Value(
-                            self.construct_machine(&machine_name, args)?,
-                        ));
-                    }
+                if let Some(name) = Self::extract_dotted_name(obj, &field.name)
+                    && let Some(machine_name) = self.registry_name(&self.machines, &name)
+                {
+                    return Ok(ExprFlow::Value(
+                        self.construct_machine(&machine_name, args)?,
+                    ));
                 }
-                if let Some(owner_name) = Self::dotted_expr_name(obj) {
-                    if field.name == "transition" {
-                        if let Some(machine_name) = self.registry_name(&self.machines, &owner_name)
-                        {
-                            return Ok(ExprFlow::Value(
-                                self.machine_transition(&machine_name, args)?,
-                            ));
-                        }
-                    }
+                if let Some(owner_name) = Self::dotted_expr_name(obj)
+                    && field.name == "transition"
+                    && let Some(machine_name) = self.registry_name(&self.machines, &owner_name)
+                {
+                    return Ok(ExprFlow::Value(
+                        self.machine_transition(&machine_name, args)?,
+                    ));
                 }
             }
             _ => {}
@@ -1461,23 +1459,23 @@ impl Interpreter {
                 }
                 // Fall through to enum variant construction if no built-in or
                 // user function matched.
-                if let Some(owner_name) = Self::dotted_expr_name(obj) {
-                    if let Some(enum_name) = self.registry_name(&self.enums, &owner_name) {
-                        return Ok(ExprFlow::Value(self.construct_enum_variant(
-                            &enum_name,
-                            &field.name,
-                            arg_values,
-                        )?));
-                    }
+                if let Some(owner_name) = Self::dotted_expr_name(obj)
+                    && let Some(enum_name) = self.registry_name(&self.enums, &owner_name)
+                {
+                    return Ok(ExprFlow::Value(self.construct_enum_variant(
+                        &enum_name,
+                        &field.name,
+                        arg_values,
+                    )?));
                 }
-                if let Expr::Ident(ident) = obj.as_ref() {
-                    if let Some(enum_name) = self.registry_name(&self.enums, &ident.name) {
-                        return Ok(ExprFlow::Value(self.construct_enum_variant(
-                            &enum_name,
-                            &field.name,
-                            arg_values,
-                        )?));
-                    }
+                if let Expr::Ident(ident) = obj.as_ref()
+                    && let Some(enum_name) = self.registry_name(&self.enums, &ident.name)
+                {
+                    return Ok(ExprFlow::Value(self.construct_enum_variant(
+                        &enum_name,
+                        &field.name,
+                        arg_values,
+                    )?));
                 }
                 match dotted {
                     Some(name) => Ok(ExprFlow::Value(
@@ -2493,7 +2491,7 @@ impl Interpreter {
                     let numeric = if *width > 8
                         && width % 8 == 0
                         && !bitfield.network_order
-                        && bit_index % 8 == 0
+                        && bit_index.is_multiple_of(8)
                     {
                         let byte_count = (*width as usize) / 8;
                         let start = bit_index / 8;
@@ -2542,7 +2540,7 @@ impl Interpreter {
                     fields.push((field.name.name.clone(), value));
                 }
                 BitfieldFieldKind::Payload(_) => {
-                    if bit_index % 8 != 0 {
+                    if !bit_index.is_multiple_of(8) {
                         return Err(format!(
                             "bitfield '{}' payload field '{}' must begin on a byte boundary",
                             bitfield.name.name, field.name.name
@@ -2844,7 +2842,7 @@ impl Interpreter {
         network_order: bool,
         byte_aligned: bool,
     ) {
-        if width > 8 && width % 8 == 0 && !network_order && byte_aligned {
+        if width > 8 && width.is_multiple_of(8) && !network_order && byte_aligned {
             let byte_count = (width / 8) as usize;
             for byte_index in 0..byte_count {
                 let byte = ((value >> (byte_index * 8)) & 0xFF) as u8;
@@ -2931,10 +2929,11 @@ impl Interpreter {
         }
         let expected_type_arg_count = if matches!(
             name,
-            "type.field_value" | "type.machine_field_value" | "type.variant_field_value"
+            "type.field_value"
+                | "type.machine_field_value"
+                | "type.variant_field_value"
+                | "type.construct_put"
         ) {
-            2
-        } else if matches!(name, "type.construct_put") {
             2
         } else {
             1
@@ -3348,12 +3347,13 @@ impl Interpreter {
         let mut expanded = ident.clone();
         if let Some(name) = self.expand_namespace_alias_name(&ident.name) {
             expanded.name = name;
-        } else if !ident.name.contains('.') && !Self::is_builtin_type_name(&ident.name) {
-            if let Some(namespace) = namespace {
-                let qualified = format!("{namespace}.{}", ident.name);
-                if self.type_name_is_registered(&qualified) {
-                    expanded.name = qualified;
-                }
+        } else if !ident.name.contains('.')
+            && !Self::is_builtin_type_name(&ident.name)
+            && let Some(namespace) = namespace
+        {
+            let qualified = format!("{namespace}.{}", ident.name);
+            if self.type_name_is_registered(&qualified) {
+                expanded.name = qualified;
             }
         }
         expanded
@@ -5026,22 +5026,23 @@ impl Interpreter {
             return TypeExpr::Function(args, Box::new(return_type), span);
         }
 
-        if !matches!(info.kind.as_str(), "alias" | "refinement") && !info.args.is_empty() {
-            if let Some((generic_name, _)) = info.type_name.split_once('[') {
-                let args = info
-                    .args
-                    .iter()
-                    .map(Self::reflection_type_info_type_expr)
-                    .collect();
-                return TypeExpr::Generic(
-                    Ident {
-                        name: generic_name.to_string(),
-                        span,
-                    },
-                    args,
+        if !matches!(info.kind.as_str(), "alias" | "refinement")
+            && !info.args.is_empty()
+            && let Some((generic_name, _)) = info.type_name.split_once('[')
+        {
+            let args = info
+                .args
+                .iter()
+                .map(Self::reflection_type_info_type_expr)
+                .collect();
+            return TypeExpr::Generic(
+                Ident {
+                    name: generic_name.to_string(),
                     span,
-                );
-            }
+                },
+                args,
+                span,
+            );
         }
 
         TypeExpr::Named(Ident {
@@ -6960,33 +6961,33 @@ impl Interpreter {
                 )));
             };
 
-            if let Some(field_def) = bitfield.fields.get(index) {
-                if let BitfieldFieldKind::Bits { width, as_type } = &field_def.kind {
-                    let value = if as_type.is_none() {
-                        match Self::normalized_plain_bitfield_field_value(
-                            &bitfield.name.name,
-                            &field_def.name.name,
-                            *width,
-                            value,
-                        ) {
-                            Ok(value) => value,
-                            Err(message) => return Ok(result_fail(message)),
-                        }
-                    } else {
-                        if let Err(message) = self.bitfield_field_numeric_value(
-                            &bitfield,
-                            &field_def.name.name,
-                            *width,
-                            as_type.as_ref(),
-                            value,
-                        ) {
-                            return Ok(result_fail(message));
-                        }
-                        value.clone()
-                    };
-                    bitfield_fields.push((field.name.clone(), value));
-                    continue;
-                }
+            if let Some(field_def) = bitfield.fields.get(index)
+                && let BitfieldFieldKind::Bits { width, as_type } = &field_def.kind
+            {
+                let value = if as_type.is_none() {
+                    match Self::normalized_plain_bitfield_field_value(
+                        &bitfield.name.name,
+                        &field_def.name.name,
+                        *width,
+                        value,
+                    ) {
+                        Ok(value) => value,
+                        Err(message) => return Ok(result_fail(message)),
+                    }
+                } else {
+                    if let Err(message) = self.bitfield_field_numeric_value(
+                        &bitfield,
+                        &field_def.name.name,
+                        *width,
+                        as_type.as_ref(),
+                        value,
+                    ) {
+                        return Ok(result_fail(message));
+                    }
+                    value.clone()
+                };
+                bitfield_fields.push((field.name.clone(), value));
+                continue;
             }
 
             bitfield_fields.push((field.name.clone(), value.clone()));
@@ -7306,7 +7307,7 @@ impl Interpreter {
         invalid_hex_error: &str,
     ) -> Result<Vec<u8>, String> {
         let hex = raw.strip_prefix("0x").unwrap_or(raw);
-        if hex.len() % 2 != 0 {
+        if !hex.len().is_multiple_of(2) {
             return Err(even_length_error.to_string());
         }
         if !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
@@ -8501,7 +8502,7 @@ impl Interpreter {
                             .collect();
                         nums.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                         let mid = nums.len() / 2;
-                        let median = if nums.len() % 2 == 0 {
+                        let median = if nums.len().is_multiple_of(2) {
                             (nums[mid - 1] + nums[mid]) / 2.0
                         } else {
                             nums[mid]
@@ -8710,8 +8711,7 @@ impl Interpreter {
                 match &args[1] {
                     Value::Int64(count) => {
                         let n = (*count).max(0) as usize;
-                        let items: Vec<Value> =
-                            std::iter::repeat(args[0].clone()).take(n).collect();
+                        let items: Vec<Value> = std::iter::repeat_n(args[0].clone(), n).collect();
                         Some(Ok(Value::List(items)))
                     }
                     _ => Some(Err(format!("{name} expects a value and an int64 count"))),
@@ -9059,8 +9059,8 @@ impl Interpreter {
                             let total_pad = width - grapheme_len;
                             let left_pad = total_pad / 2;
                             let right_pad = total_pad - left_pad;
-                            let left: String = std::iter::repeat(' ').take(left_pad).collect();
-                            let right: String = std::iter::repeat(' ').take(right_pad).collect();
+                            let left: String = std::iter::repeat_n(' ', left_pad).collect();
+                            let right: String = std::iter::repeat_n(' ', right_pad).collect();
                             Some(Ok(Value::String(format!("{left}{s}{right}"))))
                         }
                     }
@@ -9078,7 +9078,7 @@ impl Interpreter {
                             Some(Ok(Value::String(s.clone())))
                         } else {
                             let padding: String =
-                                std::iter::repeat(' ').take(width - grapheme_len).collect();
+                                std::iter::repeat_n(' ', width - grapheme_len).collect();
                             Some(Ok(Value::String(format!("{s}{padding}"))))
                         }
                     }
@@ -9096,7 +9096,7 @@ impl Interpreter {
                             Some(Ok(Value::String(s.clone())))
                         } else {
                             let padding: String =
-                                std::iter::repeat(' ').take(width - grapheme_len).collect();
+                                std::iter::repeat_n(' ', width - grapheme_len).collect();
                             Some(Ok(Value::String(format!("{padding}{s}"))))
                         }
                     }
@@ -9120,7 +9120,7 @@ impl Interpreter {
                                 ("", s.as_str())
                             };
                             let zeros: String =
-                                std::iter::repeat('0').take(width - grapheme_len).collect();
+                                std::iter::repeat_n('0', width - grapheme_len).collect();
                             Some(Ok(Value::String(format!("{sign}{zeros}{digits}"))))
                         }
                     }
@@ -9419,7 +9419,7 @@ impl Interpreter {
                             .map(|cols| {
                                 let entries: Vec<(Value, Value)> = headers
                                     .iter()
-                                    .zip(cols.into_iter())
+                                    .zip(cols)
                                     .map(|(h, c)| (Value::String(h.clone()), Value::String(c)))
                                     .collect();
                                 Value::Map(entries)
@@ -9672,10 +9672,10 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, String> {
         // Check if the name refers to a variable holding a function value (closure).
-        if let Some(fn_val) = self.get_variable(name).cloned() {
-            if matches!(fn_val, Value::Function { .. }) {
-                return self.call_fn_value(fn_val, args);
-            }
+        if let Some(fn_val) = self.get_variable(name).cloned()
+            && matches!(fn_val, Value::Function { .. })
+        {
+            return self.call_fn_value(fn_val, args);
         }
 
         let resolved_name = self
@@ -10286,7 +10286,7 @@ impl Interpreter {
         let fields = strukt
             .fields
             .iter()
-            .zip(fields.into_iter())
+            .zip(fields)
             .map(|(field, value)| (field.name.name.clone(), value.unwrap()))
             .collect();
 
@@ -10353,29 +10353,29 @@ impl Interpreter {
                 ));
             }
 
-            if let BitfieldFieldKind::Bits { width, as_type } = &bitfield.fields[field_index].kind {
-                if as_type.is_none() {
-                    let literal_input = matches!(arg.value, Expr::IntLiteral(_, _));
-                    let normalized = match Self::normalized_plain_bitfield_field_value(
-                        bitfield_name,
-                        &bitfield.fields[field_index].name.name,
-                        *width,
-                        &value,
-                    ) {
-                        Ok(value) => value,
-                        Err(message) if literal_input => return Err(message),
-                        Err(message) => {
-                            return Ok(Value::ResultFail(Box::new(Value::String(message))));
-                        }
-                    };
-
-                    if !literal_input {
-                        requires_runtime_validation = true;
+            if let BitfieldFieldKind::Bits { width, as_type } = &bitfield.fields[field_index].kind
+                && as_type.is_none()
+            {
+                let literal_input = matches!(arg.value, Expr::IntLiteral(_, _));
+                let normalized = match Self::normalized_plain_bitfield_field_value(
+                    bitfield_name,
+                    &bitfield.fields[field_index].name.name,
+                    *width,
+                    &value,
+                ) {
+                    Ok(value) => value,
+                    Err(message) if literal_input => return Err(message),
+                    Err(message) => {
+                        return Ok(Value::ResultFail(Box::new(Value::String(message))));
                     }
+                };
 
-                    fields[field_index] = Some(normalized);
-                    continue;
+                if !literal_input {
+                    requires_runtime_validation = true;
                 }
+
+                fields[field_index] = Some(normalized);
+                continue;
             }
 
             fields[field_index] = Some(value);
@@ -10395,7 +10395,7 @@ impl Interpreter {
             fields: bitfield
                 .fields
                 .iter()
-                .zip(fields.into_iter())
+                .zip(fields)
                 .map(|(field, value)| (field.name.name.clone(), value.unwrap()))
                 .collect(),
         };
@@ -10761,13 +10761,10 @@ fn eval_uint64_arithmetic(left: u64, op: BinOp, right: u64) -> Result<Value, Str
             .checked_mul(right)
             .map(Value::Uint64)
             .ok_or_else(|| format!("uint64 overflow: {left} * {right}")),
-        BinOp::Div => {
-            if right == 0 {
-                Err("division by zero".to_string())
-            } else {
-                Ok(Value::Uint64(left / right))
-            }
-        }
+        BinOp::Div => left
+            .checked_div(right)
+            .map(Value::Uint64)
+            .ok_or_else(|| "division by zero".to_string()),
         BinOp::Modulo => {
             if right == 0 {
                 Err("modulo by zero".to_string())
@@ -16689,7 +16686,7 @@ fn base64_decode(s: &str) -> Result<Vec<u8>, String> {
         }
     }
     let bytes = s.as_bytes();
-    if bytes.len() % 4 != 0 {
+    if !bytes.len().is_multiple_of(4) {
         return Err("base64 string length must be a multiple of 4".to_string());
     }
     let mut out = Vec::new();

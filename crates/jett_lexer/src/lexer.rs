@@ -153,7 +153,7 @@ impl<'src> Lexer<'src> {
         // is checked at end-of-line during token processing.
 
         // Validate indentation: must be multiple of 4
-        if !has_tab && spaces % 4 != 0 {
+        if !has_tab && !spaces.is_multiple_of(4) {
             self.errors.push(LexError {
                 message: format!(
                     "indentation must be a multiple of 4 spaces, found {} spaces",
@@ -652,7 +652,7 @@ impl<'src> Lexer<'src> {
         // Check for float: digits followed by '.' followed by digit
         if !self.at_end()
             && self.current_byte() == b'.'
-            && self.peek_byte(1).map_or(false, |b| b.is_ascii_digit())
+            && self.peek_byte(1).is_some_and(|b| b.is_ascii_digit())
         {
             self.pos += 1; // skip '.'
             while !self.at_end() && self.current_byte().is_ascii_digit() {

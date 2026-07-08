@@ -234,12 +234,12 @@ impl<'a> OwnershipChecker<'a> {
 
         // If the target is an identifier, check if it's mutable and handle rebinding.
         if let Expr::Ident(ident) = &assign.target {
-            if let Some(info) = self.states.get_mut(&ident.name) {
-                if info.mutable {
-                    // Mutable variable: rebinding resets state to Owned.
-                    info.state = OwnershipState::Owned;
-                    info.consumed_span = None;
-                }
+            if let Some(info) = self.states.get_mut(&ident.name)
+                && info.mutable
+            {
+                // Mutable variable: rebinding resets state to Owned.
+                info.state = OwnershipState::Owned;
+                info.consumed_span = None;
             }
         } else {
             self.check_expr_ownership(&assign.target);
@@ -343,7 +343,7 @@ impl<'a> OwnershipChecker<'a> {
                 if if_stmt.else_block.is_none() {
                     return false;
                 }
-                Self::block_can_fall_through(&if_stmt.then_block) == false
+                !Self::block_can_fall_through(&if_stmt.then_block)
                     && if_stmt
                         .else_ifs
                         .iter()
@@ -419,16 +419,12 @@ impl<'a> OwnershipChecker<'a> {
         match expr {
             Expr::Ident(ident) => {
                 // Reading a variable: check if it has been consumed.
-                if let Some(info) = self.states.get(&ident.name) {
-                    if info.state == OwnershipState::Consumed {
-                        if let Some(consumed_span) = info.consumed_span {
-                            self.diagnostics.push(use_after_move(
-                                &ident.name,
-                                ident.span,
-                                consumed_span,
-                            ));
-                        }
-                    }
+                if let Some(info) = self.states.get(&ident.name)
+                    && info.state == OwnershipState::Consumed
+                    && let Some(consumed_span) = info.consumed_span
+                {
+                    self.diagnostics
+                        .push(use_after_move(&ident.name, ident.span, consumed_span));
                 }
             }
             Expr::Binary(lhs, _, rhs, _) => {

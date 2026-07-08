@@ -1000,10 +1000,10 @@ impl Resolver {
                 self.resolve_expr(operand, item_index);
             }
             Expr::FieldAccess(object, _, _) => {
-                if let Some(path) = dotted_expr_name(expr) {
-                    if self.resolve_namespace_prefix(&path, expr.span(), item_index) {
-                        return;
-                    }
+                if let Some(path) = dotted_expr_name(expr)
+                    && self.resolve_namespace_prefix(&path, expr.span(), item_index)
+                {
+                    return;
                 }
 
                 // Only resolve the object; the field is resolved during type checking.
@@ -1181,13 +1181,12 @@ impl Resolver {
             return;
         }
 
-        if !name.contains('.') {
-            if let Some(qualified) = self.current_qualified_name(name) {
-                if let Some(def_id) = self.scope_table.lookup(self.current_scope, &qualified) {
-                    self.record_resolution(&qualified, span, item_index, def_id);
-                    return;
-                }
-            }
+        if !name.contains('.')
+            && let Some(qualified) = self.current_qualified_name(name)
+            && let Some(def_id) = self.scope_table.lookup(self.current_scope, &qualified)
+        {
+            self.record_resolution(&qualified, span, item_index, def_id);
+            return;
         }
 
         if let Some(def_id) = self.scope_table.lookup(self.current_scope, name) {
@@ -1253,13 +1252,14 @@ impl Resolver {
         }
 
         // Check for forward reference to a top-level item.
-        if let Some(&(top_def_id, decl_index)) = self.top_level_order.get(name) {
-            if def_id == top_def_id && decl_index > item_index {
-                let def_span = self.scope_table.def(def_id).span;
-                self.sink
-                    .emit(errors::forward_reference(name, span, def_span));
-                return;
-            }
+        if let Some(&(top_def_id, decl_index)) = self.top_level_order.get(name)
+            && def_id == top_def_id
+            && decl_index > item_index
+        {
+            let def_span = self.scope_table.def(def_id).span;
+            self.sink
+                .emit(errors::forward_reference(name, span, def_span));
+            return;
         }
         self.resolutions.insert(span, def_id);
         self.used_defs.insert(def_id);
@@ -1320,10 +1320,10 @@ impl Resolver {
     }
 
     fn resolve_namespace_prefix(&mut self, path: &str, span: Span, item_index: usize) -> bool {
-        if let Some(expanded) = self.expand_namespace_alias_path(path) {
-            if self.resolve_namespace_prefix_candidate(&expanded, span, item_index) {
-                return true;
-            }
+        if let Some(expanded) = self.expand_namespace_alias_path(path)
+            && self.resolve_namespace_prefix_candidate(&expanded, span, item_index)
+        {
+            return true;
         }
 
         self.resolve_namespace_prefix_candidate(path, span, item_index)

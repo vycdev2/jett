@@ -800,7 +800,7 @@ fn generate_float_values() -> Vec<Value> {
         Value::Float64(0.0),
         Value::Float64(1.0),
         Value::Float64(-1.0),
-        Value::Float64(3.14),
+        Value::Float64(std::f64::consts::PI),
         Value::Float64(-0.0),
     ]
 }
@@ -1052,6 +1052,7 @@ fn generate_set_values_for_type(
     values
 }
 
+#[allow(clippy::too_many_arguments)]
 fn generate_map_values_for_type(
     interp: &mut Interpreter,
     key_ty: &TypeExpr,
@@ -1143,6 +1144,7 @@ fn generate_optional_values_for_type(
     values
 }
 
+#[allow(clippy::too_many_arguments)]
 fn generate_result_values_for_type(
     interp: &mut Interpreter,
     ok_ty: &TypeExpr,
@@ -1492,6 +1494,7 @@ fn generate_struct_values(
     values
 }
 
+#[allow(clippy::too_many_arguments)]
 fn generate_generic_struct_values_for_type_name(
     interp: &mut Interpreter,
     name: &str,

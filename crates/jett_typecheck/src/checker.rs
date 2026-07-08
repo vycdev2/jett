@@ -694,10 +694,10 @@ impl<'a> TypeChecker<'a> {
 
         let def = self.resolve.scope_table.def(def_id);
         if def.kind == DefKind::Namespace {
-            if def.name == prefix {
-                if let Some(target) = self.resolve.namespace_aliases.get(&def_id) {
-                    return format!("{target}.{suffix}");
-                }
+            if def.name == prefix
+                && let Some(target) = self.resolve.namespace_aliases.get(&def_id)
+            {
+                return format!("{target}.{suffix}");
             }
             return name.to_string();
         }
@@ -2388,41 +2388,40 @@ impl<'a> TypeChecker<'a> {
         span: Span,
     ) -> Option<(Vec<TypeId>, TypeId)> {
         let name = self.resolved_expr_name(callee)?;
-        if let Some((type_name, method_name)) = name.rsplit_once('.') {
-            if let Some(&type_id) = self.named_types.get(type_name) {
-                if matches!(self.interner.resolve(type_id), Type::Bitfield(_)) {
-                    match method_name {
-                        "to_bytes" => {
-                            if !type_args.is_empty() {
-                                self.sink.emit(errors::unknown_type(
-                                    &format!(
-                                        "{name} (expected 0 type arguments, got {})",
-                                        type_args.len()
-                                    ),
-                                    span,
-                                ));
-                            }
-                            return Some((vec![type_id], TypeInterner::BYTES));
-                        }
-                        "from_bytes" => {
-                            if !type_args.is_empty() {
-                                self.sink.emit(errors::unknown_type(
-                                    &format!(
-                                        "{name} (expected 0 type arguments, got {})",
-                                        type_args.len()
-                                    ),
-                                    span,
-                                ));
-                            }
-                            return Some((
-                                vec![TypeInterner::BYTES],
-                                self.interner
-                                    .intern(Type::Result(type_id, TypeInterner::STRING)),
-                            ));
-                        }
-                        _ => {}
+        if let Some((type_name, method_name)) = name.rsplit_once('.')
+            && let Some(&type_id) = self.named_types.get(type_name)
+            && matches!(self.interner.resolve(type_id), Type::Bitfield(_))
+        {
+            match method_name {
+                "to_bytes" => {
+                    if !type_args.is_empty() {
+                        self.sink.emit(errors::unknown_type(
+                            &format!(
+                                "{name} (expected 0 type arguments, got {})",
+                                type_args.len()
+                            ),
+                            span,
+                        ));
                     }
+                    return Some((vec![type_id], TypeInterner::BYTES));
                 }
+                "from_bytes" => {
+                    if !type_args.is_empty() {
+                        self.sink.emit(errors::unknown_type(
+                            &format!(
+                                "{name} (expected 0 type arguments, got {})",
+                                type_args.len()
+                            ),
+                            span,
+                        ));
+                    }
+                    return Some((
+                        vec![TypeInterner::BYTES],
+                        self.interner
+                            .intern(Type::Result(type_id, TypeInterner::STRING)),
+                    ));
+                }
+                _ => {}
             }
         }
 
@@ -4625,7 +4624,7 @@ impl<'a> TypeChecker<'a> {
                             field.span,
                         ));
                     }
-                    if bits_before_payload % 8 != 0 {
+                    if !bits_before_payload.is_multiple_of(8) {
                         self.sink.emit(errors::invalid_bitfield_field(
                             &def.name.name,
                             &field.name.name,
@@ -5393,7 +5392,7 @@ impl<'a> TypeChecker<'a> {
 
                 then_ok
                     && else_ifs_ok
-                    && if_stmt.else_block.as_ref().map_or(true, |block| {
+                    && if_stmt.else_block.as_ref().is_none_or(|block| {
                         let else_context = if all_conditions_static {
                             ReflectionBranchContext::StaticReflectionBranch
                         } else {
@@ -5417,7 +5416,7 @@ impl<'a> TypeChecker<'a> {
                                     type_params,
                                 ))))
             }
-            Stmt::Return(ret) => ret.value.as_ref().map_or(true, |expr| {
+            Stmt::Return(ret) => ret.value.as_ref().is_none_or(|expr| {
                 !self.expr_uses_type_param_reflection(expr, type_params)
                     || (context.permits_shape_reflection()
                         && self.expr_is_direct_reflection_statement_source(expr, type_params))
@@ -5468,15 +5467,15 @@ impl<'a> TypeChecker<'a> {
         type_params: &HashSet<String>,
         context: ReflectionBranchContext,
     ) -> bool {
-        if let Some(owner_ty) = direct_reflected_loop_owner_type(&for_stmt.iterable) {
-            if Self::type_expr_mentions_type_param(owner_ty, type_params) {
-                return context.permits_shape_reflection()
-                    && self.block_reflection_is_branch_specializable_in_context(
-                        &for_stmt.body,
-                        type_params,
-                        ReflectionBranchContext::StaticReflectionBranch,
-                    );
-            }
+        if let Some(owner_ty) = direct_reflected_loop_owner_type(&for_stmt.iterable)
+            && Self::type_expr_mentions_type_param(owner_ty, type_params)
+        {
+            return context.permits_shape_reflection()
+                && self.block_reflection_is_branch_specializable_in_context(
+                    &for_stmt.body,
+                    type_params,
+                    ReflectionBranchContext::StaticReflectionBranch,
+                );
         }
 
         !self.expr_uses_type_param_reflection(&for_stmt.iterable, type_params)
@@ -5895,10 +5894,10 @@ impl<'a> TypeChecker<'a> {
         let [type_arg] = type_args else {
             return None;
         };
-        if let TypeExpr::Named(ident) = type_arg {
-            if let Some(&type_id) = self.type_var_subst.get(&ident.name) {
-                return Some(type_id);
-            }
+        if let TypeExpr::Named(ident) = type_arg
+            && let Some(&type_id) = self.type_var_subst.get(&ident.name)
+        {
+            return Some(type_id);
         }
         let type_id = self.resolve_type_expr(type_arg);
         (type_id != TypeInterner::ERROR).then_some(type_id)
@@ -6315,26 +6314,26 @@ impl<'a> TypeChecker<'a> {
             return;
         }
 
-        if let Some(field_name) = reflected_field_type_info_binding(&bind.value) {
-            if let Some(field_types) = self.reflected_field_types_for_name(field_name) {
-                for field_ty in field_types {
-                    if field_ty != TypeInterner::ERROR {
-                        self.check_comptime_type_bind_body(&bind.name.name, field_ty, &bind.body);
-                    }
+        if let Some(field_name) = reflected_field_type_info_binding(&bind.value)
+            && let Some(field_types) = self.reflected_field_types_for_name(field_name)
+        {
+            for field_ty in field_types {
+                if field_ty != TypeInterner::ERROR {
+                    self.check_comptime_type_bind_body(&bind.name.name, field_ty, &bind.body);
                 }
-                return;
             }
+            return;
         }
 
-        if let Some(info_name) = reflected_type_info_binding(&bind.value) {
-            if let Some(info_types) = self.reflected_type_info_types_for_name(info_name) {
-                for info_ty in info_types {
-                    if info_ty != TypeInterner::ERROR {
-                        self.check_comptime_type_bind_body(&bind.name.name, info_ty, &bind.body);
-                    }
+        if let Some(info_name) = reflected_type_info_binding(&bind.value)
+            && let Some(info_types) = self.reflected_type_info_types_for_name(info_name)
+        {
+            for info_ty in info_types {
+                if info_ty != TypeInterner::ERROR {
+                    self.check_comptime_type_bind_body(&bind.name.name, info_ty, &bind.body);
                 }
-                return;
             }
+            return;
         }
 
         self.sink
@@ -6463,37 +6462,37 @@ impl<'a> TypeChecker<'a> {
     ) {
         let mut type_info_scope = HashMap::new();
         for (index, kind_tag) in &facts.type_info_kinds {
-            if let Some(param) = func.params.get(*index) {
-                if let Some(def_id) = self.declaration_def_id(param.name.span) {
-                    type_info_scope.insert(def_id, kind_tag.clone());
-                }
+            if let Some(param) = func.params.get(*index)
+                && let Some(def_id) = self.declaration_def_id(param.name.span)
+            {
+                type_info_scope.insert(def_id, kind_tag.clone());
             }
         }
 
         let mut type_info_primitive_scope = HashMap::new();
         for (index, primitive_tag) in &facts.type_info_primitives {
-            if let Some(param) = func.params.get(*index) {
-                if let Some(def_id) = self.declaration_def_id(param.name.span) {
-                    type_info_primitive_scope.insert(def_id, primitive_tag.clone());
-                }
+            if let Some(param) = func.params.get(*index)
+                && let Some(def_id) = self.declaration_def_id(param.name.span)
+            {
+                type_info_primitive_scope.insert(def_id, primitive_tag.clone());
             }
         }
 
         let mut type_kind_scope = HashMap::new();
         for (index, kind_tag) in &facts.type_kind_values {
-            if let Some(param) = func.params.get(*index) {
-                if let Some(def_id) = self.declaration_def_id(param.name.span) {
-                    type_kind_scope.insert(def_id, kind_tag.clone());
-                }
+            if let Some(param) = func.params.get(*index)
+                && let Some(def_id) = self.declaration_def_id(param.name.span)
+            {
+                type_kind_scope.insert(def_id, kind_tag.clone());
             }
         }
 
         let mut type_primitive_scope = HashMap::new();
         for (index, primitive_tag) in &facts.type_primitive_values {
-            if let Some(param) = func.params.get(*index) {
-                if let Some(def_id) = self.declaration_def_id(param.name.span) {
-                    type_primitive_scope.insert(def_id, primitive_tag.clone());
-                }
+            if let Some(param) = func.params.get(*index)
+                && let Some(def_id) = self.declaration_def_id(param.name.span)
+            {
+                type_primitive_scope.insert(def_id, primitive_tag.clone());
             }
         }
 
@@ -6936,10 +6935,10 @@ impl<'a> TypeChecker<'a> {
             ));
         }
 
-        if let Some(name) = bind_name {
-            if let Some(def_id) = self.declaration_def_id(name.span) {
-                self.type_env.insert(def_id, TypeInterner::STRING);
-            }
+        if let Some(name) = bind_name
+            && let Some(def_id) = self.declaration_def_id(name.span)
+        {
+            self.type_env.insert(def_id, TypeInterner::STRING);
         }
 
         self.check_handle_body(body);
@@ -6978,20 +6977,18 @@ impl<'a> TypeChecker<'a> {
             return;
         }
 
-        if self.type_id_is_named(declared_type, "TypeKind") {
-            if let Some(kind_tag) = self.eval_type_kind_value(&decl.value) {
-                if let Some(scope) = self.current_reflection_type_kind_value_scope_mut() {
-                    scope.insert(def_id, kind_tag);
-                }
-            }
+        if self.type_id_is_named(declared_type, "TypeKind")
+            && let Some(kind_tag) = self.eval_type_kind_value(&decl.value)
+            && let Some(scope) = self.current_reflection_type_kind_value_scope_mut()
+        {
+            scope.insert(def_id, kind_tag);
         }
 
-        if self.type_id_is_named(declared_type, "TypePrimitive") {
-            if let Some(primitive_tag) = self.eval_type_primitive_value(&decl.value) {
-                if let Some(scope) = self.current_reflection_type_primitive_value_scope_mut() {
-                    scope.insert(def_id, primitive_tag);
-                }
-            }
+        if self.type_id_is_named(declared_type, "TypePrimitive")
+            && let Some(primitive_tag) = self.eval_type_primitive_value(&decl.value)
+            && let Some(scope) = self.current_reflection_type_primitive_value_scope_mut()
+        {
+            scope.insert(def_id, primitive_tag);
         }
     }
 
@@ -7018,10 +7015,10 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn check_assign(&mut self, assign: &ast::AssignStmt) {
-        if let Expr::Ident(ident) = &assign.target {
-            if let Some(def_id) = self.ident_def_id(ident) {
-                self.clear_reflection_local_fact(def_id);
-            }
+        if let Expr::Ident(ident) = &assign.target
+            && let Some(def_id) = self.ident_def_id(ident)
+        {
+            self.clear_reflection_local_fact(def_id);
         }
 
         let target_type = self.check_expr(&assign.target);
@@ -7048,14 +7045,14 @@ impl<'a> TypeChecker<'a> {
             None => TypeInterner::NOTHING,
         };
 
-        if let Some(expected) = self.current_return_type {
-            if !self.satisfies_expected_type(expected, ret_type) {
-                self.sink.emit(errors::return_type_mismatch(
-                    &self.type_name(expected),
-                    &self.type_name(ret_type),
-                    ret.span,
-                ));
-            }
+        if let Some(expected) = self.current_return_type
+            && !self.satisfies_expected_type(expected, ret_type)
+        {
+            self.sink.emit(errors::return_type_mismatch(
+                &self.type_name(expected),
+                &self.type_name(ret_type),
+                ret.span,
+            ));
         }
     }
 
@@ -7555,7 +7552,7 @@ impl<'a> TypeChecker<'a> {
 
         for (arm_index, arm) in match_stmt.arms.iter().enumerate() {
             let check_body = unknown_reflection_span.is_none()
-                && selected_static_arm.map_or(true, |selected| selected == arm_index);
+                && selected_static_arm.is_none_or(|selected| selected == arm_index);
 
             match &arm.pattern {
                 ast::Pattern::Ident(name) => {
@@ -7830,9 +7827,9 @@ impl<'a> TypeChecker<'a> {
         current_ty
     }
 
-    fn pipeline_step_call_parts<'b>(
-        step: &'b ast::PipelineStep,
-    ) -> (&'b Expr, &'b [TypeExpr], &'b [ast::CallArg], bool) {
+    fn pipeline_step_call_parts(
+        step: &ast::PipelineStep,
+    ) -> (&Expr, &[TypeExpr], &[ast::CallArg], bool) {
         let (function, piped_as_view) = match &step.function {
             Expr::View(inner, _) => (inner.as_ref(), true),
             _ => (&step.function, false),
@@ -7920,16 +7917,17 @@ impl<'a> TypeChecker<'a> {
         }
 
         let builtin_signature = self.builtin_signature(function, type_args, step.span);
-        if builtin_signature.is_none() && !type_args.is_empty() {
-            if let Some(return_type) = self.check_generic_function_pipeline_step(
+        if builtin_signature.is_none()
+            && !type_args.is_empty()
+            && let Some(return_type) = self.check_generic_function_pipeline_step(
                 callee_name.as_deref(),
                 type_args,
                 current_ty,
                 extra_args,
                 step.span,
-            ) {
-                return return_type;
-            }
+            )
+        {
+            return return_type;
         }
 
         let user_function_signature = if builtin_signature.is_none() {
@@ -7999,23 +7997,21 @@ impl<'a> TypeChecker<'a> {
             );
         }
 
-        if matches!(callee_name.as_deref(), Some("secret.compare")) && checked_arg_types.len() == 2
-        {
-            if let (Some(lhs_inner), Some(rhs_inner)) = (
+        if matches!(callee_name.as_deref(), Some("secret.compare"))
+            && checked_arg_types.len() == 2
+            && let (Some(lhs_inner), Some(rhs_inner)) = (
                 self.secret_inner_type(checked_arg_types[0]),
                 self.secret_inner_type(checked_arg_types[1]),
-            ) {
-                if !self.types_compatible(lhs_inner, rhs_inner)
-                    || !self.types_compatible(rhs_inner, lhs_inner)
-                {
-                    self.sink.emit(errors::argument_type_mismatch(
-                        "#2",
-                        &self.type_name(checked_arg_types[0]),
-                        &self.type_name(checked_arg_types[1]),
-                        step.span,
-                    ));
-                }
-            }
+            )
+            && (!self.types_compatible(lhs_inner, rhs_inner)
+                || !self.types_compatible(rhs_inner, lhs_inner))
+        {
+            self.sink.emit(errors::argument_type_mismatch(
+                "#2",
+                &self.type_name(checked_arg_types[0]),
+                &self.type_name(checked_arg_types[1]),
+                step.span,
+            ));
         }
 
         self.check_json_pipeline_public_call_policy(
@@ -8366,17 +8362,17 @@ impl<'a> TypeChecker<'a> {
             return TypeInterner::ERROR;
         };
 
-        if let Some(&ty) = self.named_types.get(&actor_name) {
-            if let Type::Actor(aid) = *self.interner.resolve(ty) {
-                let actor_def = self.interner.resolve_actor(aid).clone();
-                self.check_actor_argument_list(
-                    &actor_def.name,
-                    &actor_def.capability_params,
-                    args,
-                    inner.span(),
-                );
-                return ty;
-            }
+        if let Some(&ty) = self.named_types.get(&actor_name)
+            && let Type::Actor(aid) = *self.interner.resolve(ty)
+        {
+            let actor_def = self.interner.resolve_actor(aid).clone();
+            self.check_actor_argument_list(
+                &actor_def.name,
+                &actor_def.capability_params,
+                args,
+                inner.span(),
+            );
+            return ty;
         }
 
         for arg in args {
@@ -8497,10 +8493,9 @@ impl<'a> TypeChecker<'a> {
             .resolutions
             .get(&ident.span)
             .or_else(|| self.decl_defs.get(&ident.span))
+            && let Some(&type_id) = self.type_env.get(&def_id)
         {
-            if let Some(&type_id) = self.type_env.get(&def_id) {
-                return type_id;
-            }
+            return type_id;
         }
         // If name resolution didn't find this ident, the resolver already
         // emitted an error. We return Error to avoid cascading type errors.
@@ -8705,16 +8700,16 @@ impl<'a> TypeChecker<'a> {
                 continue;
             }
 
-            if self.type_id_is_named(param_ty, "TypeKind") {
-                if let Some(kind_tag) = self.eval_type_kind_value(&arg.value) {
-                    facts.type_kind_values.push((index, kind_tag));
-                }
+            if self.type_id_is_named(param_ty, "TypeKind")
+                && let Some(kind_tag) = self.eval_type_kind_value(&arg.value)
+            {
+                facts.type_kind_values.push((index, kind_tag));
             }
 
-            if self.type_id_is_named(param_ty, "TypePrimitive") {
-                if let Some(primitive_tag) = self.eval_type_primitive_value(&arg.value) {
-                    facts.type_primitive_values.push((index, primitive_tag));
-                }
+            if self.type_id_is_named(param_ty, "TypePrimitive")
+                && let Some(primitive_tag) = self.eval_type_primitive_value(&arg.value)
+            {
+                facts.type_primitive_values.push((index, primitive_tag));
             }
         }
 
@@ -9018,25 +9013,22 @@ impl<'a> TypeChecker<'a> {
 
         // -- Capability / purity check --
         // Extract the callee name so we can look it up in the purity map.
-        if let Some(callee_name) = callee_name.as_deref() {
-            if !callee_is_pure {
-                // E0500: pure function calls impure function
-                if self.current_function_pure {
-                    if let Some(caller_name) = &self.current_function_name {
-                        self.sink
-                            .emit(errors::pure_calls_impure(caller_name, &callee_name, span));
-                    }
-                }
-                // E0501: verify block calls impure function
-                if self.in_verify_block {
-                    if let Some(verify_name) = &self.current_verify_name {
-                        self.sink.emit(errors::verify_calls_impure(
-                            verify_name,
-                            &callee_name,
-                            span,
-                        ));
-                    }
-                }
+        if let Some(callee_name) = callee_name.as_deref()
+            && !callee_is_pure
+        {
+            // E0500: pure function calls impure function
+            if self.current_function_pure
+                && let Some(caller_name) = &self.current_function_name
+            {
+                self.sink
+                    .emit(errors::pure_calls_impure(caller_name, callee_name, span));
+            }
+            // E0501: verify block calls impure function
+            if self.in_verify_block
+                && let Some(verify_name) = &self.current_verify_name
+            {
+                self.sink
+                    .emit(errors::verify_calls_impure(verify_name, callee_name, span));
             }
         }
 
@@ -9064,107 +9056,68 @@ impl<'a> TypeChecker<'a> {
         }
 
         // Check for generic function call: `name[T](args...)`.
-        if builtin_signature.is_none() && !type_args.is_empty() {
-            if let Some(function_name) = callee_name.as_deref() {
-                if let Some(template) = self.generic_function_templates.get(function_name).cloned()
-                {
-                    let concrete_args: Vec<TypeId> = type_args
-                        .iter()
-                        .map(|a| self.resolve_type_expr(a))
-                        .collect();
+        if builtin_signature.is_none()
+            && !type_args.is_empty()
+            && let Some(function_name) = callee_name.as_deref()
+        {
+            if let Some(template) = self.generic_function_templates.get(function_name).cloned() {
+                let concrete_args: Vec<TypeId> = type_args
+                    .iter()
+                    .map(|a| self.resolve_type_expr(a))
+                    .collect();
 
-                    if template.type_params.len() != concrete_args.len() {
-                        self.sink.emit(errors::unknown_type(
-                            &format!(
-                                "{} (expected {} type argument(s), got {})",
-                                function_name,
-                                template.type_params.len(),
-                                concrete_args.len()
-                            ),
-                            span,
-                        ));
-                        return TypeInterner::ERROR;
-                    }
-
-                    let subst: HashMap<String, TypeId> = template
-                        .type_params
-                        .iter()
-                        .zip(concrete_args.iter())
-                        .map(|(p, &ty)| (p.name.clone(), ty))
-                        .collect();
-                    let kind_subst: HashMap<String, String> = template
-                        .type_params
-                        .iter()
-                        .zip(type_args.iter().zip(concrete_args.iter()))
-                        .map(|(param, (type_arg, &resolved_ty))| {
-                            (
-                                param.name.clone(),
-                                self.reflection_kind_tag_for_type_expr(type_arg, resolved_ty),
-                            )
-                        })
-                        .collect();
-
-                    let old_subst = std::mem::replace(&mut self.type_var_subst, subst.clone());
-
-                    let param_types: Vec<TypeId> = template
-                        .params
-                        .iter()
-                        .map(|p| self.resolve_type_expr(&p.ty))
-                        .collect();
-                    let return_type = template
-                        .return_type
-                        .as_ref()
-                        .map(|t| self.resolve_type_expr(t))
-                        .unwrap_or(TypeInterner::NOTHING);
-
-                    self.type_var_subst = old_subst;
-
-                    // Check argument count and types.
-                    if args.len() != param_types.len() {
-                        self.sink.emit(errors::argument_count_mismatch(
-                            function_name,
-                            param_types.len(),
-                            args.len(),
-                            span,
-                        ));
-                        for arg in args {
-                            self.check_expr(&arg.value);
-                        }
-                        return TypeInterner::ERROR;
-                    }
-                    let mut arguments_match = true;
-                    for (arg, &expected) in args.iter().zip(param_types.iter()) {
-                        let got = self.check_expr_for_expected(&arg.value, expected, false);
-                        if !self.types_compatible(expected, got) {
-                            arguments_match = false;
-                            self.sink.emit(errors::type_mismatch(
-                                &self.type_name(expected),
-                                &self.type_name(got),
-                                arg.value.span(),
-                            ));
-                        }
-                    }
-                    if arguments_match {
-                        let param_facts =
-                            self.reflection_param_facts_for_call(&template, &param_types, args);
-                        self.check_generic_function_instantiation(
-                            function_name,
-                            &template,
-                            &concrete_args,
-                            subst,
-                            kind_subst,
-                            param_facts,
-                        );
-                    }
-                    return return_type;
-                }
-
-                if self.function_signatures.contains_key(function_name) {
+                if template.type_params.len() != concrete_args.len() {
                     self.sink.emit(errors::unknown_type(
                         &format!(
-                            "{function_name} (expected 0 type argument(s), got {})",
-                            type_args.len()
+                            "{} (expected {} type argument(s), got {})",
+                            function_name,
+                            template.type_params.len(),
+                            concrete_args.len()
                         ),
+                        span,
+                    ));
+                    return TypeInterner::ERROR;
+                }
+
+                let subst: HashMap<String, TypeId> = template
+                    .type_params
+                    .iter()
+                    .zip(concrete_args.iter())
+                    .map(|(p, &ty)| (p.name.clone(), ty))
+                    .collect();
+                let kind_subst: HashMap<String, String> = template
+                    .type_params
+                    .iter()
+                    .zip(type_args.iter().zip(concrete_args.iter()))
+                    .map(|(param, (type_arg, &resolved_ty))| {
+                        (
+                            param.name.clone(),
+                            self.reflection_kind_tag_for_type_expr(type_arg, resolved_ty),
+                        )
+                    })
+                    .collect();
+
+                let old_subst = std::mem::replace(&mut self.type_var_subst, subst.clone());
+
+                let param_types: Vec<TypeId> = template
+                    .params
+                    .iter()
+                    .map(|p| self.resolve_type_expr(&p.ty))
+                    .collect();
+                let return_type = template
+                    .return_type
+                    .as_ref()
+                    .map(|t| self.resolve_type_expr(t))
+                    .unwrap_or(TypeInterner::NOTHING);
+
+                self.type_var_subst = old_subst;
+
+                // Check argument count and types.
+                if args.len() != param_types.len() {
+                    self.sink.emit(errors::argument_count_mismatch(
+                        function_name,
+                        param_types.len(),
+                        args.len(),
                         span,
                     ));
                     for arg in args {
@@ -9172,6 +9125,45 @@ impl<'a> TypeChecker<'a> {
                     }
                     return TypeInterner::ERROR;
                 }
+                let mut arguments_match = true;
+                for (arg, &expected) in args.iter().zip(param_types.iter()) {
+                    let got = self.check_expr_for_expected(&arg.value, expected, false);
+                    if !self.types_compatible(expected, got) {
+                        arguments_match = false;
+                        self.sink.emit(errors::type_mismatch(
+                            &self.type_name(expected),
+                            &self.type_name(got),
+                            arg.value.span(),
+                        ));
+                    }
+                }
+                if arguments_match {
+                    let param_facts =
+                        self.reflection_param_facts_for_call(&template, &param_types, args);
+                    self.check_generic_function_instantiation(
+                        function_name,
+                        &template,
+                        &concrete_args,
+                        subst,
+                        kind_subst,
+                        param_facts,
+                    );
+                }
+                return return_type;
+            }
+
+            if self.function_signatures.contains_key(function_name) {
+                self.sink.emit(errors::unknown_type(
+                    &format!(
+                        "{function_name} (expected 0 type argument(s), got {})",
+                        type_args.len()
+                    ),
+                    span,
+                ));
+                for arg in args {
+                    self.check_expr(&arg.value);
+                }
+                return TypeInterner::ERROR;
             }
         }
 
@@ -9182,50 +9174,48 @@ impl<'a> TypeChecker<'a> {
         }
 
         // Check for generic struct construction: `Name[T, U](fields...)`.
-        if !type_args.is_empty() {
-            if let Some(struct_name) = callee_name.as_deref() {
-                if self.generic_struct_templates.contains_key(struct_name) {
-                    let concrete_args: Vec<TypeId> = type_args
-                        .iter()
-                        .map(|a| self.resolve_type_expr(a))
-                        .collect();
-                    let mono_ty = self.monomorphize_struct(struct_name, &concrete_args, span);
-                    if mono_ty != TypeInterner::ERROR {
-                        let sid = match self.interner.resolve(mono_ty) {
-                            Type::Struct(sid) => *sid,
-                            _ => return TypeInterner::ERROR,
-                        };
-                        return self.check_struct_constructor(sid, args, span);
-                    }
-                    return TypeInterner::ERROR;
-                }
+        if !type_args.is_empty()
+            && let Some(struct_name) = callee_name.as_deref()
+            && self.generic_struct_templates.contains_key(struct_name)
+        {
+            let concrete_args: Vec<TypeId> = type_args
+                .iter()
+                .map(|a| self.resolve_type_expr(a))
+                .collect();
+            let mono_ty = self.monomorphize_struct(struct_name, &concrete_args, span);
+            if mono_ty != TypeInterner::ERROR {
+                let sid = match self.interner.resolve(mono_ty) {
+                    Type::Struct(sid) => *sid,
+                    _ => return TypeInterner::ERROR,
+                };
+                return self.check_struct_constructor(sid, args, span);
             }
+            return TypeInterner::ERROR;
         }
 
-        if type_args.is_empty() {
-            if let Some(type_name) = callee_name.as_deref() {
-                if let Some(type_id) = self.named_types.get(type_name).copied() {
-                    match self.interner.resolve(type_id).clone() {
-                        Type::Struct(sid) => {
-                            if Self::is_reflection_metadata_type_name(type_name) {
-                                self.sink
-                                    .emit(errors::reflection_metadata_constructor(type_name, span));
-                                for arg in args {
-                                    self.check_expr(&arg.value);
-                                }
-                                return TypeInterner::ERROR;
-                            }
-                            return self.check_struct_constructor(sid, args, span);
+        if type_args.is_empty()
+            && let Some(type_name) = callee_name.as_deref()
+            && let Some(type_id) = self.named_types.get(type_name).copied()
+        {
+            match self.interner.resolve(type_id).clone() {
+                Type::Struct(sid) => {
+                    if Self::is_reflection_metadata_type_name(type_name) {
+                        self.sink
+                            .emit(errors::reflection_metadata_constructor(type_name, span));
+                        for arg in args {
+                            self.check_expr(&arg.value);
                         }
-                        Type::Bitfield(bid) => {
-                            return self.check_bitfield_constructor(bid, args, span);
-                        }
-                        Type::Machine(mid) => {
-                            return self.check_machine_constructor(mid, args, span);
-                        }
-                        _ => {}
+                        return TypeInterner::ERROR;
                     }
+                    return self.check_struct_constructor(sid, args, span);
                 }
+                Type::Bitfield(bid) => {
+                    return self.check_bitfield_constructor(bid, args, span);
+                }
+                Type::Machine(mid) => {
+                    return self.check_machine_constructor(mid, args, span);
+                }
+                _ => {}
             }
         }
 
@@ -9374,23 +9364,21 @@ impl<'a> TypeChecker<'a> {
             }
         }
 
-        if matches!(callee_name.as_deref(), Some("secret.compare")) && checked_arg_types.len() == 2
-        {
-            if let (Some(lhs_inner), Some(rhs_inner)) = (
+        if matches!(callee_name.as_deref(), Some("secret.compare"))
+            && checked_arg_types.len() == 2
+            && let (Some(lhs_inner), Some(rhs_inner)) = (
                 self.secret_inner_type(checked_arg_types[0]),
                 self.secret_inner_type(checked_arg_types[1]),
-            ) {
-                if !self.types_compatible(lhs_inner, rhs_inner)
-                    || !self.types_compatible(rhs_inner, lhs_inner)
-                {
-                    self.sink.emit(errors::argument_type_mismatch(
-                        "#2",
-                        &self.type_name(checked_arg_types[0]),
-                        &self.type_name(checked_arg_types[1]),
-                        args[1].value.span(),
-                    ));
-                }
-            }
+            )
+            && (!self.types_compatible(lhs_inner, rhs_inner)
+                || !self.types_compatible(rhs_inner, lhs_inner))
+        {
+            self.sink.emit(errors::argument_type_mismatch(
+                "#2",
+                &self.type_name(checked_arg_types[0]),
+                &self.type_name(checked_arg_types[1]),
+                args[1].value.span(),
+            ));
         }
 
         self.check_json_public_call_policy(
@@ -9400,10 +9388,11 @@ impl<'a> TypeChecker<'a> {
             return_type,
         );
 
-        if let Some(callee_name) = callee_name.as_deref() {
-            if tainted_return && Self::is_secret_liftable_call(callee_name, callee_is_pure) {
-                return self.maybe_wrap_secret(return_type, true);
-            }
+        if let Some(callee_name) = callee_name.as_deref()
+            && tainted_return
+            && Self::is_secret_liftable_call(callee_name, callee_is_pure)
+        {
+            return self.maybe_wrap_secret(return_type, true);
         }
 
         return_type
@@ -9445,19 +9434,19 @@ impl<'a> TypeChecker<'a> {
             }
         }
 
-        if !matches!(base, Expr::Ident(_)) {
-            if let Some(type_name) = Self::extract_dotted_name(base) {
-                let type_name = self.resolved_or_expanded_name(&type_name, span);
-                if let Some(type_id) = self.named_types.get(&type_name).copied() {
-                    if matches!(self.interner.resolve(type_id), Type::Enum(_)) {
-                        return self.check_enum_variant_by_type(type_id, field, &[], span);
-                    }
-                    if let Some(method_ty) = self.check_interface_method(type_id, field, span) {
-                        return method_ty;
-                    }
-                    if let Some(method_ty) = self.check_type_module_method(type_id, field, span) {
-                        return method_ty;
-                    }
+        if !matches!(base, Expr::Ident(_))
+            && let Some(type_name) = Self::extract_dotted_name(base)
+        {
+            let type_name = self.resolved_or_expanded_name(&type_name, span);
+            if let Some(type_id) = self.named_types.get(&type_name).copied() {
+                if matches!(self.interner.resolve(type_id), Type::Enum(_)) {
+                    return self.check_enum_variant_by_type(type_id, field, &[], span);
+                }
+                if let Some(method_ty) = self.check_interface_method(type_id, field, span) {
+                    return method_ty;
+                }
+                if let Some(method_ty) = self.check_type_module_method(type_id, field, span) {
+                    return method_ty;
                 }
             }
         }
@@ -9965,19 +9954,19 @@ impl<'a> TypeChecker<'a> {
                 continue;
             }
 
-            if let TypeBitfieldFieldKind::Bits { width } = field_def.kind {
-                if field_def.ty == TypeInterner::INT64 || field_def.ty == TypeInterner::UINT64 {
-                    match &arg.value {
-                        Expr::IntLiteral(value, literal_span) => self.check_bitfield_literal_range(
-                            &bitfield_def.name,
-                            &field_def.name,
-                            width,
-                            *value,
-                            *literal_span,
-                        ),
-                        _ => {
-                            requires_runtime_validation = true;
-                        }
+            if let TypeBitfieldFieldKind::Bits { width } = field_def.kind
+                && (field_def.ty == TypeInterner::INT64 || field_def.ty == TypeInterner::UINT64)
+            {
+                match &arg.value {
+                    Expr::IntLiteral(value, literal_span) => self.check_bitfield_literal_range(
+                        &bitfield_def.name,
+                        &field_def.name,
+                        width,
+                        *value,
+                        *literal_span,
+                    ),
+                    _ => {
+                        requires_runtime_validation = true;
                     }
                 }
             }
@@ -10221,12 +10210,11 @@ impl<'a> TypeChecker<'a> {
             .or_else(|| self.decl_defs.get(&callee.span()).copied())
         {
             let def = self.resolve.scope_table.def(def_id);
-            if def.kind == DefKind::Machine {
-                if let Some(owner_ty) = self.named_types.get(&def.name).copied() {
-                    if let Type::Machine(mid) = *self.interner.resolve(owner_ty) {
-                        return Some(mid);
-                    }
-                }
+            if def.kind == DefKind::Machine
+                && let Some(owner_ty) = self.named_types.get(&def.name).copied()
+                && let Type::Machine(mid) = *self.interner.resolve(owner_ty)
+            {
+                return Some(mid);
             }
         }
 
@@ -10475,10 +10463,10 @@ impl<'a> TypeChecker<'a> {
                 if bind_name.is_none() {
                     self.sink.emit(errors::result_requires_handle_error(span));
                 }
-                if let Some(name) = bind_name {
-                    if let Some(def_id) = self.declaration_def_id(name.span) {
-                        self.type_env.insert(def_id, err_ty);
-                    }
+                if let Some(name) = bind_name
+                    && let Some(def_id) = self.declaration_def_id(name.span)
+                {
+                    self.type_env.insert(def_id, err_ty);
                 }
                 self.check_handle_body(body);
                 self.validate_handle_terminator(body, ok_ty);

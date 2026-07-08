@@ -2028,7 +2028,7 @@ impl<'src> Parser<'src> {
                 let mut parts = Vec::new();
 
                 // StringStart includes the opening quote — strip it
-                let literal = if start_text.len() >= 1 {
+                let literal = if !start_text.is_empty() {
                     &start_text[1..]
                 } else {
                     start_text
@@ -2049,7 +2049,7 @@ impl<'src> Parser<'src> {
                             self.advance();
                             let end_text = self.token_text(&end_tok);
                             // StringEnd includes the closing quote — strip it
-                            let literal = if end_text.len() >= 1 {
+                            let literal = if !end_text.is_empty() {
                                 &end_text[..end_text.len() - 1]
                             } else {
                                 end_text

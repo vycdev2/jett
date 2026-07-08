@@ -157,6 +157,7 @@ fn reprint_tokens(tokens: &[Token], comments: &[CommentTrivia], source: &str) ->
     output
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_comments_before(
     comments: &[CommentTrivia],
     comment_index: &mut usize,
@@ -209,7 +210,7 @@ fn has_newline_between(source: &str, start: usize, end: usize) -> bool {
 
 fn comment_line_prefix(source: &str, comment_start: usize) -> &str {
     let line_start = source[..comment_start]
-        .rfind(|ch| ch == '\n' || ch == '\r')
+        .rfind(['\n', '\r'])
         .map(|index| index + 1)
         .unwrap_or(0);
     let prefix = &source[line_start..comment_start];

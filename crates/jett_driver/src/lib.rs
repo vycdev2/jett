@@ -1408,6 +1408,7 @@ fn append_file_symbol_query_entries(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn push_file_symbol_query_entry(
     symbols: &mut Vec<FileSymbolQueryEntry>,
     name: String,
@@ -1633,6 +1634,7 @@ fn append_module_query_definitions(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn push_exported_query_definition(
     definitions: &mut Vec<QueryDefinition>,
     leaf_name: &str,
@@ -2726,6 +2728,50 @@ pub fn bundle_project(start_dir: &Path, output: &Path) -> Result<BundleResult, S
     })
 }
 
+// ---------------------------------------------------------------------------
+// Helpers — project file discovery for `jett test`
+// ---------------------------------------------------------------------------
+
+/// Walk up from `start_dir` to find a directory containing `jett.proj`.
+fn find_project_root(start_dir: &Path) -> Result<std::path::PathBuf, String> {
+    let start = if start_dir.is_file() {
+        start_dir.parent().unwrap_or(start_dir).to_path_buf()
+    } else {
+        start_dir.to_path_buf()
+    };
+
+    let mut current = start.as_path();
+    loop {
+        if current.join("jett.proj").exists() {
+            return Ok(current.to_path_buf());
+        }
+        match current.parent() {
+            Some(parent) => current = parent,
+            None => {
+                return Err("no jett.proj found in current directory or any parent".to_string());
+            }
+        }
+    }
+}
+
+/// Recursively collect all `.jett` files in a directory, skipping hidden dirs
+/// and `target/`.
+fn collect_jett_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) -> std::io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if !dir_name.starts_with('.') && dir_name != "target" {
+                collect_jett_files(&path, out)?;
+            }
+        } else if path.extension().and_then(|e| e.to_str()) == Some("jett") {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3212,48 +3258,4 @@ mod tests {
                 .ends_with("dist/lib.jett")
         );
     }
-}
-
-// ---------------------------------------------------------------------------
-// Helpers — project file discovery for `jett test`
-// ---------------------------------------------------------------------------
-
-/// Walk up from `start_dir` to find a directory containing `jett.proj`.
-fn find_project_root(start_dir: &Path) -> Result<std::path::PathBuf, String> {
-    let start = if start_dir.is_file() {
-        start_dir.parent().unwrap_or(start_dir).to_path_buf()
-    } else {
-        start_dir.to_path_buf()
-    };
-
-    let mut current = start.as_path();
-    loop {
-        if current.join("jett.proj").exists() {
-            return Ok(current.to_path_buf());
-        }
-        match current.parent() {
-            Some(parent) => current = parent,
-            None => {
-                return Err("no jett.proj found in current directory or any parent".to_string());
-            }
-        }
-    }
-}
-
-/// Recursively collect all `.jett` files in a directory, skipping hidden dirs
-/// and `target/`.
-fn collect_jett_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) -> std::io::Result<()> {
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if !dir_name.starts_with('.') && dir_name != "target" {
-                collect_jett_files(&path, out)?;
-            }
-        } else if path.extension().and_then(|e| e.to_str()) == Some("jett") {
-            out.push(path);
-        }
-    }
-    Ok(())
 }
